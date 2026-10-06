@@ -4,56 +4,92 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Market Dashboard</title>
+  <link rel="icon" href="data:,">
   <link rel="stylesheet" href="styles.css">
+  <script src="https://unpkg.com/lightweight-charts@5.2.1/dist/lightweight-charts.standalone.production.js" defer></script>
 </head>
 <body>
   <main>
     <header class="page-header">
       <h1>Market dashboard</h1>
+      <div class="clock-bar">
+        <span class="pill" id="ny-clock" data-testid="ny-clock">--:--:-- NY</span>
+        <span class="pill" id="killzone-status" data-testid="killzone-status"></span>
+        <span class="pill" id="macro-status" data-testid="macro-status"></span>
+        <span class="pill muted" id="connection-status" data-testid="connection-status">Connecting…</span>
+      </div>
     </header>
 
-    <section class="market" id="stocks" data-kind="stocks">
-      <div class="market-header">
-        <h2>Stocks</h2>
-        <p class="status" aria-live="polite"></p>
-        <form class="add-symbol">
-          <label class="visually-hidden" for="stocks-input">Add stock symbol</label>
-          <input id="stocks-input" placeholder="Add symbol, e.g. AAPL" autocomplete="off" maxlength="10">
+    <div class="news-banner" id="news-banner" role="alert" hidden></div>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h2>Watchlist</h2>
+        <form class="add-symbol" id="add-symbol">
+          <label class="visually-hidden" for="symbol-input">Add Yahoo symbol</label>
+          <input id="symbol-input" placeholder="Yahoo symbol, e.g. GC=F" autocomplete="off" maxlength="15">
           <button type="submit">Add</button>
-          <button type="button" class="refresh">Refresh</button>
         </form>
       </div>
-      <p class="note">Free tier: 25 requests a day. Quotes are cached for 15 minutes, so refresh manually.</p>
-      <div class="tiles"></div>
+      <p class="note">CME futures from Yahoo are delayed about 10 minutes; FX and crypto are near-live. Change is versus the previous 17:00 NY close. Click a tile for its chart.</p>
+      <div class="tiles" id="tiles"></div>
     </section>
 
-    <section class="market" id="crypto" data-kind="crypto">
-      <div class="market-header">
-        <h2>Crypto</h2>
-        <p class="status" aria-live="polite"></p>
-        <form class="add-symbol">
-          <label class="visually-hidden" for="crypto-input">Add crypto symbol</label>
-          <input id="crypto-input" placeholder="Add symbol, e.g. XRP" autocomplete="off" maxlength="10">
-          <button type="submit">Add</button>
-          <button type="button" class="refresh">Refresh</button>
-        </form>
+    <section class="panel">
+      <h2>Key levels</h2>
+      <p class="note">Previous day, week and month highs and lows. “Swept” means the current period has traded through it.</p>
+      <div class="table-wrap">
+        <table id="levels-table">
+          <thead>
+            <tr><th scope="col">Market</th><th scope="col">PDH</th><th scope="col">PDL</th><th scope="col">PWH</th><th scope="col">PWL</th><th scope="col">PMH</th><th scope="col">PML</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
       </div>
-      <p class="note">Refreshes automatically every 60 seconds. Change is over the last 24 hours.</p>
-      <div class="tiles"></div>
     </section>
+
+    <section class="panel">
+      <h2>Killzone ranges</h2>
+      <p class="note">High and low of each killzone in the current trading day (from 18:00 NY).</p>
+      <div class="table-wrap">
+        <table id="killzone-table">
+          <thead><tr><th scope="col">Market</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <div class="two-column">
+      <section class="panel">
+        <h2>SMT divergence</h2>
+        <p class="note">Latest killzone versus the one before it.</p>
+        <ul class="smt-list" id="smt-list"></ul>
+      </section>
+
+      <section class="panel">
+        <h2>Economic calendar</h2>
+        <p class="note">USD, EUR and GBP, high and medium impact, in NY time.</p>
+        <div class="table-wrap">
+          <table id="calendar-table">
+            <thead>
+              <tr><th scope="col">Time</th><th scope="col">Ccy</th><th scope="col">Impact</th><th scope="col">Event</th><th scope="col">Fcst</th><th scope="col">Prev</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
   </main>
 
-  <template id="tile-template">
-    <article class="tile">
-      <div class="tile-top">
-        <h3 class="tile-label"></h3>
-        <button type="button" class="remove" aria-label="Remove">×</button>
-      </div>
-      <p class="tile-value">–</p>
-      <p class="tile-delta"></p>
-    </article>
-  </template>
+  <dialog id="chart-dialog" aria-labelledby="chart-title">
+    <div class="dialog-header">
+      <h2 id="chart-title"></h2>
+      <button type="button" id="chart-close" aria-label="Close chart">×</button>
+    </div>
+    <p class="note">5-minute candles, NY time. Dashed lines are the key levels.</p>
+    <div id="chart" data-testid="chart"></div>
+  </dialog>
 
-  <script src="app.js"></script>
+  <script src="app.js" defer></script>
 </body>
 </html>

@@ -1,104 +1,57 @@
-import os
-import time
+import asyncio
+import json
+import re
 from pathlib import Path
 
-import requests
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
+
+from snapshot import build_history, build_snapshot
 
 app = FastAPI()
 
-# API keys come from environment variables so they are never committed
-STOCK_API_KEY = os.getenv("ALPHAVANTAGE_API_KEY", "")
-STOCK_API_URL = "https://www.alphavantage.co/query"
-LIVECOINWATCH_API_URL = "https://api.livecoinwatch.com/coins/single"
-LIVECOINWATCH_API_KEY = os.getenv("LIVECOINWATCH_API_KEY", "")
-REQUEST_TIMEOUT_SECONDS = 10
-
-# Alpha Vantage's free tier allows 25 requests/day, so successful quotes are reused for a while
-STOCK_CACHE_SECONDS = 15 * 60
-stock_cache = {}
-
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
+STREAM_INTERVAL_SECONDS = 15
+MAX_SYMBOLS = 20
+SYMBOL_PATTERN = re.compile(r"^[A-Za-z0-9.=^\-]{1,15}$")  # Yahoo symbols, e.g. NQ=F, DX-Y.NYB, ^TNX
 
 
-def parse_percent(text):
-    """Convert Alpha Vantage's '-0.2397%' into -0.2397."""
-    try:
-        return float(text.rstrip("%"))
-    except (AttributeError, ValueError):
-        return None
+def parse_symbols(raw):
+    symbols = list(dict.fromkeys(part.strip().upper() for part in raw.split(",") if part.strip()))
+    if not symbols or len(symbols) > MAX_SYMBOLS:
+        raise HTTPException(status_code=400, detail=f"Provide between 1 and {MAX_SYMBOLS} symbols")
+    invalid = [symbol for symbol in symbols if not SYMBOL_PATTERN.match(symbol)]
+    if invalid:
+        raise HTTPException(status_code=400, detail=f"Invalid symbols: {', '.join(invalid)}")
+    return symbols
 
 
-def get_cached_stock(symbol):
-    cached = stock_cache.get(symbol)
-    if cached and time.monotonic() - cached["fetched_at"] < STOCK_CACHE_SECONDS:
-        return cached["result"]
-    return None
+@app.get("/api/snapshot")
+def get_snapshot(symbols: str = Query(...)):
+    return build_snapshot(parse_symbols(symbols))
 
 
-# Plain `def` (not `async def`): requests is blocking, so FastAPI runs these in a threadpool
-@app.get("/stocks/{symbol}")
-def get_stock_price(symbol: str):
-    symbol = symbol.upper()
-    cached = get_cached_stock(symbol)
-    if cached:
-        return cached
-
-    try:
-        params = {"function": "GLOBAL_QUOTE", "symbol": symbol, "apikey": STOCK_API_KEY}
-        response = requests.get(STOCK_API_URL, params=params, timeout=REQUEST_TIMEOUT_SECONDS).json()
-        print("Stock API Response:", response)  # Log the full response
-
-        # Extract stock price
-        quote = response.get("Global Quote")
-        if quote:
-            result = {
-                "symbol": symbol,
-                "price": quote.get("05. price"),
-                "change_percent": parse_percent(quote.get("10. change percent")),
-            }
-            stock_cache[symbol] = {"fetched_at": time.monotonic(), "result": result}
-            return result
-        # Alpha Vantage reports rate limiting as an "Information" message with HTTP 200
-        if "Information" in response:
-            return {"error": "Stock API rate limit reached"}
-        return {"error": "Stock data not found"}
-    except Exception as e:
-        print(f"Error: {e}")
-        return {"error": "Failed to fetch stock data"}
+async def snapshot_events(symbols, is_disconnected):
+    """Yields a Server-Sent Event with a fresh snapshot every STREAM_INTERVAL_SECONDS."""
+    while not await is_disconnected():
+        # Snapshot building is blocking (network + pandas), so keep it off the event loop
+        snapshot = await run_in_threadpool(build_snapshot, symbols)
+        yield f"data: {json.dumps(snapshot)}\n\n"
+        await asyncio.sleep(STREAM_INTERVAL_SECONDS)
 
 
-@app.get("/crypto/{symbol}")
-def get_crypto_price(symbol: str):
-    try:
-        # Headers and payload for Live Coin Watch API
-        headers = {
-            "x-api-key": LIVECOINWATCH_API_KEY
-        }
-        payload = {
-            "currency": "USD",
-            "code": symbol.upper(),  # Convert symbol to uppercase
-            "meta": True
-        }
-        response = requests.post(
-            LIVECOINWATCH_API_URL, json=payload, headers=headers, timeout=REQUEST_TIMEOUT_SECONDS
-        ).json()
-        print("Crypto API Response:", response)  # Log the full response
+@app.get("/api/stream")
+async def stream_snapshots(request: Request, symbols: str = Query(...)):
+    events = snapshot_events(parse_symbols(symbols), request.is_disconnected)
+    return StreamingResponse(events, media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
-        # Extract cryptocurrency price (the API returns no "code" field, so echo the request's)
-        if response and "rate" in response:
-            # "delta.day" is a ratio to 24h ago, e.g. 1.0015 means +0.15%
-            day_ratio = (response.get("delta") or {}).get("day")
-            return {
-                "symbol": symbol.upper(),
-                "price": response.get("rate"),
-                "change_percent": (day_ratio - 1) * 100 if day_ratio is not None else None,
-            }
-        return {"error": "Crypto data not found"}
-    except Exception as e:
-        print(f"Error: {e}")
-        return {"error": "Failed to fetch crypto data"}
+
+@app.get("/api/history/{symbol}")
+def get_history(symbol: str):
+    return build_history(parse_symbols(symbol)[0])
 
 
 # Mounted last so the API routes above take precedence; serves the dashboard at "/"
