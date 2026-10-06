@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Market Dashboard</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main>
+    <header class="page-header">
+      <h1>Market dashboard</h1>
+    </header>
+
+    <section class="market" id="stocks" data-kind="stocks">
+      <div class="market-header">
+        <h2>Stocks</h2>
+        <p class="status" aria-live="polite"></p>
+        <form class="add-symbol">
+          <label class="visually-hidden" for="stocks-input">Add stock symbol</label>
+          <input id="stocks-input" placeholder="Add symbol, e.g. AAPL" autocomplete="off" maxlength="10">
+          <button type="submit">Add</button>
+          <button type="button" class="refresh">Refresh</button>
+        </form>
+      </div>
+      <p class="note">Free tier: 25 requests a day. Quotes are cached for 15 minutes, so refresh manually.</p>
+      <div class="tiles"></div>
+    </section>
+
+    <section class="market" id="crypto" data-kind="crypto">
+      <div class="market-header">
+        <h2>Crypto</h2>
+        <p class="status" aria-live="polite"></p>
+        <form class="add-symbol">
+          <label class="visually-hidden" for="crypto-input">Add crypto symbol</label>
+          <input id="crypto-input" placeholder="Add symbol, e.g. XRP" autocomplete="off" maxlength="10">
+          <button type="submit">Add</button>
+          <button type="button" class="refresh">Refresh</button>
+        </form>
+      </div>
+      <p class="note">Refreshes automatically every 60 seconds. Change is over the last 24 hours.</p>
+      <div class="tiles"></div>
+    </section>
+  </main>
+
+  <template id="tile-template">
+    <article class="tile">
+      <div class="tile-top">
+        <h3 class="tile-label"></h3>
+        <button type="button" class="remove" aria-label="Remove">×</button>
+      </div>
+      <p class="tile-value">–</p>
+      <p class="tile-delta"></p>
+    </article>
+  </template>
+
+  <script src="app.js"></script>
+</body>
+</html>
